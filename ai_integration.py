@@ -1,92 +1,92 @@
 import json
+import re
 from gigachat import GigaChat
 import config
-import re
 import open_files_os
-import datetime  # Добавили для работы со временем
+import weather_wiki
 
-# Справочник инструментов (Tools)
-ASSISTANT_TOOLS = [
+# Инициализируем класс, чтобы использовать его внутри вызовов инструментов GigaChat
+weather_tools = weather_wiki.AlphaAssistant()
+
+# ЧИСТЫЙ СПРАВОЧНИК ФУНКЦИЙ ДЛЯ ИИ
+GIGACHAT_FUNCTIONS = [
     {
-        "type": "function",
-        "function": {
-            "name": "run_app",
-            "description": "Запускает приложение или сайт. Обязательно очищай название от мусора и переводи в правильный системный формат (например, 'с тим' -> 'steam', 'дискорд' -> 'discord').",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "user_command": {
-                        "type": "string",
-                        "description": "Чистое английское или системное название программы (например: 'steam', 'chrome', 'discord', 'vk')."
-                    }
+        "name": "run_app",
+        "description": "Запускает приложение или открывает сайт. Если пользователь просит найти конкретное видео, трек или информацию, ОБЯЗАТЕЛЬНО передавай этот запрос в параметр search_query.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "user_command": {
+                    "type": "string",
+                    "description": "Английское системное название программы или сайта (например: 'youtube', 'chrome', 'notepad', 'google')."
                 },
-                "required": ["user_command"]
-            }
+                "search_query": {
+                    "type": "string",
+                    "description": "Поисковый запрос на русском языке, если пользователь просит что-то найти (например: 'видео про котиков', 'клип rammstein')."
+                }
+            },
+            "required": ["user_command"]
         }
     },
     {
-        "type": "function",
-        "function": {
-            "name": "check_mail",
-            "description": "Проверяет почтовый ящик пользователя.",
-            "parameters": {"type": "object", "properties": {}}
+        "name": "get_weather",
+        "description": "Получает текущую сводку погоды для города Томск.",
+        "parameters": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_wiki",
+        "description": "Ищет краткую информацию в Википедии, когда пользователь спрашивает факты, определения или биографию людей.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Предмет поиска (например: 'синхрофазотрон', 'Илон Маск')."
+                }
+            },
+            "required": ["query"]
         }
     },
     {
-        "type": "function",
-        "function": {
-            "name": "get_time",
-            "description": "Возвращает текущее системное время.",
-            "parameters": {"type": "object", "properties": {}}
-        }
+        "name": "check_mail",
+        "description": "Проверяет почтовый ящик пользователя на наличие новых писем.",
+        "parameters": {"type": "object", "properties": {}}
     },
     {
-        "type": "function",
-        "function": {
-            "name": "shutdown_pc",
-            "description": "Выключает компьютер пользователя.",
-            "parameters": {"type": "object", "properties": {}}
-        }
+        "name": "get_time",
+        "description": "Возвращает текущее системное время компьютера.",
+        "parameters": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "shutdown_pc",
+        "description": "Выключает компьютер пользователя.",
+        "parameters": {"type": "object", "properties": {}}
     }
 ]
 
-def ask_ai(question: str) -> str:  # Теперь функция всегда возвращает строку с текстом
+def ask_ai(question: str) -> str:
     cmd = question.lower()
     
-    # 1. ЛОКАЛЬНЫЙ ФИЛЬТР: Список слов, которые однозначно означают действие
+    # Список триггеров для понимания: ИИ должен использовать функции или просто общаться?
     ACTION_KEYWORDS = [
-        'открой', 'запусти', 'включи', 'поставь', 'выключи', 
-        'выруби', 'отруби', 'проверь', 'узнай', 'погода', 'время', 'письма'
+        'открой', 'запусти', 'включи', 'поставь', 'выключи', 'выруби', 'отруби', 
+        'проверь', 'узнай', 'погода', 'время', 'письма', 'почта',
+        'что такое', 'кто такой', 'википедия', 'найди информацию', 'расскажи о'
     ]
-    
     is_action_command = any(word in cmd for word in ACTION_KEYWORDS)
     
-    # 2. ДИНАМИЧЕСКИЙ ВЫБОР ПРОМПТА И ИНСТРУМЕНТОВ
     if is_action_command:
-        print(">>> Локальный фильтр: Определена КОМАНДА. Включаю режим триггера функций...")
+        # Промпт чисто для разбора запутанных фраз (без текстовых примеров, чтобы ИИ не ленился)
         system_prompt = (
-            "Ты — системный переключатель функций для ассистента Джарвиса. Твоя единственная задача — вызывать инструменты (tools).\n\n"
-            "ВАЖНО: Пользователь использует плохой голосовой ввод, поэтому названия приложений будут приходить с дикими ошибками и опечатками. "
-            "Ты должен ИСПРАВЛЯТЬ их на лету и передавать в параметр 'user_command' строго ПРАВИЛЬНОЕ английское или системное название программы.\n"
-            "Примеры исправления ошибок:\n"
-            "- 'открой с тим', 'запусти стим', 'с тимка' -> вызов run_app(user_command='steam')\n"
-            "- 'открой дискард', 'включи дискорд' -> вызов run_app(user_command='discord')\n"
-            "- 'гугл хром', 'запусти хром', 'браузер' -> вызов run_app(user_command='chrome')\n"
-            "- 'запусти вк', 'открой вконтакте' -> вызов run_app(user_command='vk')\n\n"
-            "Ты НЕ имеешь права писать текст отказа или говорить, что у тебя нет доступа. Ты ОБЯЗАН вызвать run_app!"
+            "Ты — системный переключатель функций для ассистента Джарвиса. Твоя единственная задача — вызывать инструменты.\n"
+            "Внимательно сопоставляй сложный запрос пользователя с описанием доступных функций и вызывай нужную."
         )
-        tools_to_send = ASSISTANT_TOOLS
     else:
-        print(">>> Локальный фильтр: Определен РАЗГОВОР. Включаю режим собеседника...")
-        system_prompt = "Ты — дружелюбный бортовой ИИ-ассистент Джарвис. Отвечай на вопросы пользователя очень кратко и емко (1-2 sentences)."
-        tools_to_send = None
+        # Режим обычного диалога
+        system_prompt = "Ты — дружелюбный бортовой ИИ-ассистент Джарвис. Отвечай очень кратко и емко (1-2 предложения)."
 
-    # 3. ЗАПРОС К GIGACHAT
     try:
-        with GigaChat(credentials=config.GIGACHAT_CREDENTIALS, 
-                      scope="GIGACHAT_API_PERS", 
-                      verify_ssl_certs=False) as giga:
-            
+        with GigaChat(credentials=config.GIGACHAT_CREDENTIALS, scope="GIGACHAT_API_PERS", verify_ssl_certs=False) as giga:
             payload = {
                 "messages": [
                     {"role": "system", "content": system_prompt},
@@ -94,55 +94,63 @@ def ask_ai(question: str) -> str:  # Теперь функция всегда в
                 ]
             }
             
-            if tools_to_send:
-                payload["tools"] = tools_to_send
+            # Включаем нативную поддержку функций Сбера, только если распознали команду
+            if is_action_command:
+                payload["functions"] = GIGACHAT_FUNCTIONS
+                payload["function_call"] = "auto"
             
             response = giga.chat(payload)
             message = response.choices[0].message
             
-            # 4. ОБРАБОТКА РЕЗУЛЬТАТА И МГНОВЕННОЕ ВЫПОЛНЕНИЕ
-            
-            # Вариант А: Официальный вызов функции через Tools (Штатный режим)
+            # === СПОСОБ 1: АППАРАТНЫЙ ВЫЗОВ (РЕКОМЕНДУЕМЫЙ GIGACHAT) ===
             if hasattr(message, "function_call") and message.function_call:
                 func_name = message.function_call.name
                 raw_args = message.function_call.arguments
+                args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
                 
-                if isinstance(raw_args, str):
-                    try: args = json.loads(raw_args)
-                    except Exception: args = {"user_command": question}
-                else:
-                    args = raw_args if raw_args else {}
+                print(f">>> GigaChat вызвал инструмент '{func_name}' с аргументами {args}")
                 
-                print(f">>> ИИ затребовал вызов функции '{func_name}' с аргументами {args}")
-                
-                # Выполняем команду прямо здесь через наши модули!
                 if func_name == "run_app":
-                    app_name = args.get("user_command")
-                    return open_files_os.run_app(app_name)  # Запускает приложение и возвращает статус текста
-                    
+                    return open_files_os.run_app(args.get("user_command"), args.get("search_query"))
+                elif func_name == "get_weather":
+                    return weather_tools.get_weather()
+                elif func_name == "get_wiki":
+                    return weather_tools.get_wiki(args.get("query"))
                 elif func_name == "get_time":
-                    current_time = datetime.datetime.now().strftime("%H:%M")
-                    return f"Сейчас {current_time}."
-                    
+                    return open_files_os.get_time()
                 elif func_name == "check_mail":
-                    return "Я проверил почту. Новых писем нет."
-                    
+                    return open_files_os.check_mail()
                 elif func_name == "shutdown_pc":
-                    import os
-                    os.system("shutdown /s /t 5")
-                    return "Выключаю компьютер через 5 секунд. Сохраните работу."
-            
-            # Вариант Б: ПЕРЕХВАТЧИК (Костыль-спаситель для текстовых галлюцинаций ИИ)
-            content = message.content.strip() if message.content else ""
-            if "run_app" in content:
-                match = re.search(r"run_app\(['\"](.*?)['\"]\)", content)
-                if match:
-                    extracted_app = match.group(1)
-                    print(f">>> Перехватчик: ИИ написал функцию текстом. Выполняю run_app('{extracted_app}')...")
-                    return open_files_os.run_app(extracted_app) # Выполняем запуск
+                    return open_files_os.shutdown_pc()
 
-            # Вариант В: Если это обычный разговорный текст
+            # === СПОСОБ 2: НЕУБИВАЕМЫЙ ТЕКСТОВЫЙ ПЕРЕХВАТЧИК ===
+            # Оставляем на случай, если ИИ проигнорирует JSON-инструменты и напишет код строкой в контент
+            content = message.content.strip() if message.content else ""
+            
+            for func in ["run_app", "get_weather", "get_wiki", "get_time", "check_mail", "shutdown_pc"]:
+                if func in content:
+                    match = re.search(f"{func}\s*\((.*?)\)", content)
+                    if match:
+                        inside_brackets = match.group(1)
+                        parts = [p.strip().strip("'\"") for p in inside_brackets.split(',', 1)] if inside_brackets else []
+                        
+                        print(f">>> Текстовый перехватчик поймал команду: {func}({inside_brackets})")
+                        
+                        if func == "run_app":
+                            return open_files_os.run_app(parts[0] if len(parts) > 0 else "", parts[1] if len(parts) > 1 else None)
+                        elif func == "get_weather":
+                            return weather_tools.get_weather()
+                        elif func == "get_wiki":
+                            return weather_tools.get_wiki(parts[0] if len(parts) > 0 else "")
+                        elif func == "get_time":
+                            return open_files_os.get_time()
+                        elif func == "check_mail":
+                            return open_files_os.check_mail()
+                        elif func == "shutdown_pc":
+                            return open_files_os.shutdown_pc()
+
+            # Если это был просто разговор, возвращаем обычный текстовый ответ ИИ
             return content
                     
     except Exception as e:
-        return f"Ошибка обработки запроса внутри ИИ-модуля: {e}"
+        return f"Ошибка связи с Джарвисом: {e}"
