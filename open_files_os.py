@@ -1,5 +1,5 @@
 import os
-import ctypes
+# import ctypes
 import imaplib
 import email
 import webbrowser
@@ -7,11 +7,6 @@ from email.header import decode_header
 from datetime import datetime
 import config
 import urllib.parse
-
-# Коды виртуальных клавиш Windows для управления медиа
-VK_MEDIA_NEXT_TRACK = 0xB0
-VK_MEDIA_PREV_TRACK = 0xB1
-VK_MEDIA_PLAY_PAUSE = 0xB3
 
 # Справочник ТОЛЬКО для сложных путей или специфических алиасов
 APPS = {
@@ -31,39 +26,44 @@ APPS = {
     # "календарь": "ms-calendar:"
 }
 
-def control_music(key_code):
-    """Отправляет системное нажатие медиа-клавиши."""
-    ctypes.windll.user32.keybd_event(key_code, 0, 0, 0)
-    ctypes.windll.user32.keybd_event(key_code, 0, 2, 0)
+# # Коды виртуальных клавиш Windows для управления медиа
+# VK_MEDIA_NEXT_TRACK = 0xB0
+# VK_MEDIA_PREV_TRACK = 0xB1
+# VK_MEDIA_PLAY_PAUSE = 0xB3
 
-def handle_music_commands(command: str):
-    """Обрабатывает команды управления воспроизведением."""
-    if "включи" in command or "поставь" in command:
-        if "любимое" in command or "музыку" in command:
-            try:
-                os.startfile("music:")
-            except Exception:
-                pass
-            control_music(VK_MEDIA_PLAY_PAUSE)
-            return "Включаю вашу музыку."
+# def control_music(key_code):
+#     """Отправляет системное нажатие медиа-клавиши."""
+#     ctypes.windll.user32.keybd_event(key_code, 0, 0, 0)
+#     ctypes.windll.user32.keybd_event(key_code, 0, 2, 0)
+
+# def handle_music_commands(command: str):
+#     """Обрабатывает команды управления воспроизведением."""
+#     if "включи" in command or "поставь" in command:
+#         if "любимое" in command or "музыку" in command:
+#             try:
+#                 os.startfile("music:")
+#             except Exception:
+#                 pass
+#             control_music(VK_MEDIA_PLAY_PAUSE)
+#             return "Включаю вашу музыку."
         
-    if "пауза" in command or "стоп" in command:
-        control_music(VK_MEDIA_PLAY_PAUSE)
-        return "Ставлю музыку на паузу."
+#     if "пауза" in command or "стоп" in command:
+#         control_music(VK_MEDIA_PLAY_PAUSE)
+#         return "Ставлю музыку на паузу."
 
-    if "следующий" in command or "дальше" in command:
-        control_music(VK_MEDIA_NEXT_TRACK)
-        return "Переключаю на следующий трек."
+#     if "следующий" in command or "дальше" in command:
+#         control_music(VK_MEDIA_NEXT_TRACK)
+#         return "Переключаю на следующий трек."
     
-    return None
+#     return None
 
 def run_app(user_command: str, search_query: str = None):
     cmd = user_command.lower().strip()
     
-    # 1. Перехват медиа-команд (пауза, треки)
-    music_result = handle_music_commands(cmd)
-    if music_result:
-        return music_result
+    # # 1. Перехват медиа-команд (пауза, треки)
+    # music_result = handle_music_commands(cmd)
+    # if music_result:
+    #     return music_result
 
     # 2. ОБРАБОТКА ПОИСКОВЫХ ЗАПРОСОВ (Сюда управление отправляет только ИИ)
     if search_query:
