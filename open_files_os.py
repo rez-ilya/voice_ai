@@ -2,7 +2,7 @@ import os
 import ctypes
 import imaplib
 import email
-import re  # Добавили для проверки языка команды
+import webbrowser
 from email.header import decode_header
 from datetime import datetime
 import config
@@ -27,8 +27,8 @@ APPS = {
     "параметры компьютера": "ms-settings:",
     "часы": "ms-clock:",
     "холст": "ms-paint:",
-    "фотографии": "ms-photos:",
-    "календарь": "ms-calendar:"
+    # "фотографии": "ms-photos:",
+    # "календарь": "ms-calendar:"
 }
 
 def control_music(key_code):
@@ -60,25 +60,31 @@ def handle_music_commands(command: str):
 def run_app(user_command: str, search_query: str = None):
     cmd = user_command.lower().strip()
     
-    # Перехват медиа-команд (пауза, треки)
+    # 1. Перехват медиа-команд (пауза, треки)
     music_result = handle_music_commands(cmd)
     if music_result:
         return music_result
 
-    # ЭТАП 0: ОБРАБОТКА ПОИСКОВЫХ ЗАПРОСОВ (Ютуб, Гугл и т.д.)
+    # 2. ОБРАБОТКА ПОИСКОВЫХ ЗАПРОСОВ (Сюда управление отправляет только ИИ)
     if search_query:
         print(f">>> Запрос на поиск: {search_query} в приложении {cmd}")
         encoded_query = urllib.parse.quote(search_query)
         
         if cmd in ["youtube", "ютуб"]:
-            os.startfile(f"https://www.youtube.com/results?search_query={encoded_query}")
-            return f"Включаю видео про {search_query} на Ютубе."
-            
-        elif cmd in ["chrome", "интернет",  "браузер", "google", "гугл", "yandex", "яндекс"]:
-            os.startfile(f"https://www.google.com/search?q={encoded_query}")
+            webbrowser.open(f"https://www.youtube.com/results?search_query={encoded_query}")
+            return f"Включаю {search_query} на Ютубе."
+        else:
+            webbrowser.open(f"https://www.google.com/search?q={encoded_query}")
             return f"Ищу в интернете: {search_query}."
+    
+    # 3. СИСТЕМНЫЕ СХЕМЫ WINDOWS (Умный вызов от GigaChat: ms-photos, ms-calendar)
+    if "ms-" in cmd:
+        print(f">>> Вызов UWP-приложения Windows через протокол: {cmd}")
+        os.system(f"start {cmd}:")
+        return f"Запускаю."
 
-    # ЭТАП 1: Поиск в локальном словаре жестких соответствий (если запроса нет)
+    # 4. ЭТАП ОФФЛАЙН 1: Поиск в локальном словаре жестких соответствий
+    # Работает БЕЗ ИИ, когда говоришь "открой блокнот"
     for app_name, path in APPS.items():
         if app_name in cmd:
             print(f">>> Локальный словарь: Запуск жесткого алиаса '{app_name}' -> '{path}'")
@@ -89,7 +95,7 @@ def run_app(user_command: str, search_query: str = None):
                 if os.system(f'start "" "{path}"') == 0:
                     return f"Окей, запускаю {app_name}."
                 
-    # Очистка команды от мусорных триггеров
+    # 5. Очистка команды от мусорных триггеров для динамического запуска
     clean_cmd = cmd
     for word in ["открой", "запусти", "включи", "программу", "приложение"]:
         clean_cmd = clean_cmd.replace(word, "")
@@ -98,21 +104,16 @@ def run_app(user_command: str, search_query: str = None):
     if not clean_cmd:
         return None
 
-    # ЗАЩИТА: Если в названии остались русские буквы — сразу отправляем в ИИ
-    import re
-    if re.search(r'[а-яА-ЯёЁ]', clean_cmd):
-        print(f">>> Локальный запуск для '{clean_cmd}' отменен (русский текст). Передаю в GigaChat...")
-        return None
+    # 6. ЭТАП ОФФЛАЙН 2: ДИНАМИЧЕСКИЙ ЗАПУСК И ПРОТОКОЛЫ
+    # Если мы в оффлайне, и юзер сказал английское имя (например, "discord")
+    # try:
+    #     print(f">>> Динамический запуск: Пробую системную команду 'start {clean_cmd}'")
+    #     if os.system(f'start "" "{clean_cmd}"') == 0:
+    #         return f"Открываю {clean_cmd}."
+    # except Exception:
+    #     pass
 
-    # ЭТАП 2: ДИНАМИЧЕСКИЙ ЗАПУСК
-    try:
-        print(f">>> Динамический запуск: Пробую системную команду 'start {clean_cmd}'")
-        if os.system(f'start "" "{clean_cmd}"') == 0:
-            return f"Открываю {clean_cmd}."
-    except Exception:
-        pass
-
-    # Шаг Б: Проверка URI-лаунчеров
+    # Проверка URI-лаунчеров (steam://, discord://)
     KNOWN_PROTOCOLS = ["steam", "discord", "tg", "spotify", "epicgames"]
     if clean_cmd in KNOWN_PROTOCOLS:
         try:
@@ -122,7 +123,11 @@ def run_app(user_command: str, search_query: str = None):
         except Exception:
             pass
 
-    print(f">>> Динамический запуск не удался для '{clean_cmd}'")
+    # 7. ФИНАЛЬНЫЙ РЕЗЕРВНЫЙ ВЫХОД
+    # Если код дошел до этой точки, значит ЛОКАЛЬНО мы запустить ничего не смогли.
+    # Если это был первый (локальный) проход из intent_resolver, функция вернет None, 
+    # и intent_resolver перенаправит этот запрос в GigaChat.
+    print(f">>> Локальный запуск не удался для '{clean_cmd}'.")
     return None
 
 def check_mail():

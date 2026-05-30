@@ -1,7 +1,7 @@
 from rapidfuzz import fuzz, process
 import open_files_os
 import ai_integration
-import weather_wiki  # Подключаем твой новый файл с погодой и вики
+import weather_wiki
 
 # Инициализируем класс локальных инструментов
 weather_tools = weather_wiki.AlphaAssistant()
@@ -9,7 +9,7 @@ weather_tools = weather_wiki.AlphaAssistant()
 # Словарь намерений
 INTENTS = {
     'weather': ['погода', 'прогноз', 'температура', 'градусы', 'холодно'],
-    'wiki': ['кто такой', 'что такое', 'расскажи о', 'википедия'],
+    'wiki': ['кто такой', 'что такое', 'расскажи', 'википедия'],
     'mail': ['почта', 'письма', 'проверь ящик', 'новые сообщения'],
     'apps': ['открой', 'запусти', 'включи'],
     'system': ['выключи компьютер', 'отруби компьютер', 'выруби компьютер', 'отключи компьютер'],
@@ -45,7 +45,7 @@ def resolve_intent(text: str) -> str:
         if best_intent == 'weather':
             local_result = weather_tools.get_weather()
         
-        # Поиск в википедии (теперь реальный!)
+        # Поиск в википедии
         elif best_intent == 'wiki':
             query = text.lower()
             for word in INTENTS['wiki']:
